@@ -124,3 +124,7 @@ def summarize_predictions_by_unit(test_df_output, col='RUL_prediction'):
 	rul_predictions = summarize_predictions_by_unit(preprocess_and_predict(test_df))
 	"""
 	return test_df_output.groupby('id').tail(1)[col].values
+
+def test(test_df):
+	rul_predictions = summarize_predictions_by_unit(preprocess_and_predict(test_df))
+	return rul_predictions
