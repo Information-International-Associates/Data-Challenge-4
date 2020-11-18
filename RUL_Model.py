@@ -6,6 +6,13 @@ import numpy as np
 import warnings
 warnings.filterwarnings('ignore')
 
+import tensorflow as tf
+from tensorflow.keras.models import *
+from tensorflow.keras.layers import *
+from tensorflow.keras.optimizers import *
+from tensorflow.keras.utils import *
+from tensorflow.keras.callbacks import *
+
 # Scale Test
 def scale(df):
     #return (df - df.mean())/df.std()
