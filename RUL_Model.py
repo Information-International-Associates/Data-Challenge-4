@@ -41,6 +41,14 @@ def gen_sequence(id_df, seq_length, seq_cols):
     for start, stop in zip(range(0, num_elements-seq_length), range(seq_length, num_elements)):
         yield data_matrix[start:stop, :]
 
+def gen_labels(id_df, seq_length, label):
+    data_matrix = id_df[label].values
+    num_elements = data_matrix.shape[0]
+    # I have to remove the first seq_length labels
+    # because for one id the first sequence of seq_length size have as target
+    # the last label (the previus ones are discarded).
+    # All the next id's sequences will have associated step by step one label as target.
+    return data_matrix[seq_length:num_elements, :]
 
 
 def rec_plot(s, eps=0.10, steps=10):
