@@ -90,6 +90,7 @@ def preprocess(test_df):
 
 	### GENERATE X TEST ###
 	x_test = []
+	#Currently Hard Coded based on features showing variance in train file 1
 	sequence_cols = ['setting1', 'setting2', 's2', 's3', 's4', 's6', 's7', 's8', 's9', 's11', 's12', 's13', 's14', 's15', 's17', 's20', 's21']
 	for engine_id in test_df.id.unique():
 
@@ -128,3 +129,95 @@ def summarize_predictions_by_unit(test_df_output, col='RUL_prediction'):
 def test(test_df):
 	rul_predictions = summarize_predictions_by_unit(preprocess_and_predict(test_df))
 	return rul_predictions
+
+
+#Retraining
+
+def preprocess_train(train_df, w = [200,175,150,125,100,75,50,40,30,25,20,15,10,5]):
+    if len(train_df.columns == 28):
+        train_df.drop(train_df.columns[[26, 27]], axis=1, inplace=True)
+    train_df.columns = ['id', 'cycle', 'setting1', 'setting2', 'setting3', 's1', 's2', 's3',
+                         's4', 's5', 's6', 's7', 's8', 's9', 's10', 's11', 's12', 's13', 's14',
+                         's15', 's16', 's17', 's18', 's19', 's20', 's21']
+    print('#id:',len(train_df.id.unique()))
+    train_df = train_df.sort_values(['id','cycle'])
+
+    ### CALCULATE RUL TRAIN ###
+    train_df['RUL']=train_df.groupby(['id'])['cycle'].transform(max)-train_df['cycle']
+
+    train_df['label'] = np.where(train_df['RUL'] <= w[0], 1, 0 )
+    for i in range(1,len(w)):
+        train_df.loc[train_df['RUL'] <= w[i], 'label'] = i+1
+
+    ### SCALE Train DATA ###
+    for col in train_df.columns:
+        if col[0] == 's':
+            train_df[col] = scale(train_df[col])
+
+    train_df = train_df.dropna(axis=1)
+
+    ### SEQUENCE COL: COLUMNS TO CONSIDER ###
+    # sequence_cols = []
+    # for col in train_df.columns:
+    #     if col[0] == 's':
+    #         sequence_cols.append(col)
+            
+    # print(sequence_cols)
+    #Currently Hard Coded based on features showing variance in train file 1
+    sequence_cols = ['setting1', 'setting2', 's2', 's3', 's4', 's6', 's7', 's8', 's9', 's11', 's12', 's13', 's14', 's15', 's17', 's20', 's21']
+
+    ### GENERATE X TRAIN ###
+    x_train = []
+    for engine_id in train_df.id.unique():
+        for sequence in gen_sequence(train_df[train_df.id==engine_id], sequence_length, sequence_cols):
+            x_train.append(sequence)
+
+    x_train = np.asarray(x_train)
+
+    ### TRANSFORM X TRAIN TEST IN IMAGES ###
+    x_train_img = np.apply_along_axis(rec_plot, 1, x_train).astype('float16')
+
+
+    ### GENERATE Y TRAIN ###
+    y_train = []
+    for engine_id in train_df.id.unique():
+        for label in gen_labels(train_df[train_df.id==engine_id], sequence_length, ['label'] ):
+            y_train.append(label)
+        
+    y_train = np.asarray(y_train).reshape(-1,1)
+
+    ### ENCODE LABEL ###
+    y_train = to_categorical(y_train)
+
+    return x_train_img, y_train
+
+def train_model(x_train_img, y_train, w = [200,175,150,125,100,75,50,40,30,25,20,15,10,5], sequence_length = 50, smoothing_coef=0.01):
+    n_cats = len(w) + 1
+
+    model = Sequential()
+
+    model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(sequence_length, sequence_length, 17)))
+    model.add(Conv2D(32, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Dropout(0.25))
+
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Dropout(0.25))
+
+    model.add(Flatten())
+    model.add(Dense(256, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(n_cats, activation='softmax'))
+
+    #model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    loss = tf.keras.losses.CategoricalCrossentropy(label_smoothing=smoothing_coef)
+
+    model.compile(loss=loss, optimizer='adam', metrics=['accuracy'])
+
+    es = EarlyStopping(monitor='val_accuracy', mode='auto', restore_best_weights=True, verbose=1, patience=6)
+
+    model.fit(x_train_img, y_train, batch_size=512, epochs=25, callbacks=[es], validation_split=0.2, verbose=2)
+
+    return model
