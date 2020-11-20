@@ -40,6 +40,7 @@ def gen_sequence(id_df, seq_length, seq_cols):
 
     data_matrix = id_df[seq_cols].values
     num_elements = data_matrix.shape[0]
+
     # Iterate over two lists in parallel.
     # For example id1 have 192 rows and sequence_length is equal to 50
     # so zip iterate over two following list of numbers (0,142),(50,192)
@@ -69,10 +70,10 @@ def rec_plot(s, eps=0.10, steps=10):
     return Z
 
 def pad_series(test_df, sequence_length=sequence_length):
-    groupby = test_df.groupby('id')['cycle'].max()
+    groupby = test_df.groupby('id')['cycle'].count()
     nrows = groupby[groupby<=sequence_length]
-    over_50 = test_df[~test_df.id.isin(nrows.index)]
-
+    over_seq_len = test_df[~test_df.id.isin(nrows.index)]
+    
     for unit in nrows.index:
         temp = test_df[test_df.id == unit]
         padding = pd.DataFrame()
@@ -84,11 +85,11 @@ def pad_series(test_df, sequence_length=sequence_length):
         temp = padding.append(temp, ignore_index=True)
         #Renumber cycles
         temp.cycle = range(1,len(temp)+1)
-        #Append new padded series to over 50, 
-        over_50 = over_50.append(temp, ignore_index=True)
+        #Append new padded series to over seq len, 
+        over_seq_len = over_seq_len.append(temp, ignore_index=True)
     #Reorder dataframe by id and cycle
-    over_50 = over_50.sort_values(by=['id', 'cycle'])
-    return over_50
+    over_seq_len = over_seq_len.sort_values(by=['id', 'cycle'])
+    return over_seq_len
 
 def preprocess(test_df):
     ### Rename and Parse raw columns
@@ -177,8 +178,9 @@ def preprocess_train(train_df, w = [5]):
 #     train_df = train_df.dropna(axis=1)
     
     ### Pad Sequences with under 51 cycles
-#     train_df = pad_series(train_df)
+    train_df = pad_series(train_df)
     
+#     print(train_df.groupby('id').cycle.count())
     
     ### SEQUENCE COL: COLUMNS TO CONSIDER ###
     # sequence_cols = []
@@ -195,7 +197,7 @@ def preprocess_train(train_df, w = [5]):
     for engine_id in train_df.id.unique():
         for sequence in gen_sequence(train_df[train_df.id==engine_id], sequence_length, sequence_cols):
             x_train.append(sequence)
-
+    
     x_train = np.asarray(x_train)
 
     ### TRANSFORM X TRAIN TEST IN IMAGES ###
