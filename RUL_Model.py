@@ -16,8 +16,11 @@ from tensorflow.keras.callbacks import *
 # Scale Test
 def scale(df):
     #return (df - df.mean())/df.std()
-    return (df - df.min())/(df.max()-df.min())
-
+    x = df.max()-df.min() 
+    if x == 0:
+        x = 10**-5
+    return (df - df.min())/x
+   
 # Load Model
 model = load_model('ClassifierV2_Smoothing01.h5')
 w = [200,175,150,125,100,75,50,40,30,25,20,15,10,5] #Bin definitions associated with current models
@@ -31,7 +34,7 @@ rul_cats.append(3)
 rul_dict = dict(zip(range(len(w)+1), rul_cats))
 
 ### Generate Sequences ### 
-sequence_length = 50
+sequence_length = 35
 
 def gen_sequence(id_df, seq_length, seq_cols):
 
@@ -67,13 +70,13 @@ def rec_plot(s, eps=0.10, steps=10):
 
 def pad_series(test_df, sequence_length=sequence_length):
     groupby = test_df.groupby('id')['cycle'].max()
-    nrows = groupby[groupby<=50]
+    nrows = groupby[groupby<=sequence_length]
     over_50 = test_df[~test_df.id.isin(nrows.index)]
 
     for unit in nrows.index:
         temp = test_df[test_df.id == unit]
         padding = pd.DataFrame()
-        nmissing = 51 - len(temp)
+        nmissing = sequence_length+1 - len(temp)
         #Create synthetic starter rows
         for i in range(nmissing):
             padding = padding.append(pd.DataFrame(temp.iloc[0]).transpose(), ignore_index=True)
@@ -151,28 +154,30 @@ def preprocess_train(train_df, w = [5]):
         train_df.drop(train_df.columns[[26, 27]], axis=1, inplace=True)
     train_df.columns = ['id', 'cycle', 'setting1', 'setting2', 'setting3', 's1', 's2', 's3',
                          's4', 's5', 's6', 's7', 's8', 's9', 's10', 's11', 's12', 's13', 's14',
-                         's15', 's16', 's17', 's18', 's19', 's20', 's21']
+                         's15', 's16', 's17', 's18', 's19', 's20', 's21', 'label']
     print('#id:',len(train_df.id.unique()))
     train_df = train_df.sort_values(['id','cycle'])
-
+    
     max_cycle = train_df['cycle'].max()
     ### CALCULATE RUL TRAIN ###
-    train_df['RUL']=train_df.groupby(['id'])['cycle'].transform(max)-train_df['cycle']
+#     train_df['RUL']=train_df.groupby(['id'])['cycle'].transform(max)-train_df['cycle']
 
-    train_df['label'] = np.where(train_df['RUL'] <= w[0], 1, 0 )
-    for i in range(1,len(w)):
-        train_df.loc[train_df['RUL'] <= w[i], 'label'] = i+1
+#     train_df['label'] = np.where(train_df['RUL'] <= w[0], 1, 0 )
+#     for i in range(1,len(w)):
+#         train_df.loc[train_df['RUL'] <= w[i], 'label'] = i+1
         
-    train_df = train_df[train_df['cycle'] < max_cycle - w[-1]]
-
+    #subsetting to remove most recent observations with unknown label
+#     train_df = train_df[train_df['cycle'] < max_cycle - w[-1]] 
+        
     ### SCALE Train DATA ###
     for col in train_df.columns:
         if col[0] == 's':
             train_df[col] = scale(train_df[col])
 
-    train_df = train_df.dropna(axis=1)
+#     train_df = train_df.dropna(axis=1)
+    
     ### Pad Sequences with under 51 cycles
-    train_df = pad_series(train_df)
+#     train_df = pad_series(train_df)
     
     
     ### SEQUENCE COL: COLUMNS TO CONSIDER ###
@@ -183,8 +188,8 @@ def preprocess_train(train_df, w = [5]):
             
     # print(sequence_cols)
     #Currently Hard Coded based on features showing variance in train file 1
-    sequence_cols = ['setting1', 'setting2', 's2', 's3', 's4', 's6', 's7', 's8', 's9', 's11', 's12', 's13', 's14', 's15', 's17', 's20', 's21']
-
+    sequence_cols = sorted(list(set(train_df.columns) - set(['id','cycle','label'])))  #['setting1', 'setting2', 's2', 's3', 's4', 's6', 's7', 's8', 's9', 's11', 's12', 's13', 's14', 's15', 's17', 's20', 's21']
+    
     ### GENERATE X TRAIN ###
     x_train = []
     for engine_id in train_df.id.unique():
@@ -210,12 +215,12 @@ def preprocess_train(train_df, w = [5]):
 
     return x_train_img, y_train
 
-def train_model(x_train_img, y_train, w = [5], sequence_length = 50, smoothing_coef=0.01):
+def train_model(x_train_img, y_train, w = [5], sequence_length = sequence_length, smoothing_coef=0.01):
     n_cats = len(w) + 1
 
     model = Sequential()
 
-    model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(sequence_length, sequence_length, 17)))
+    model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(sequence_length, sequence_length, 24)))
     model.add(Conv2D(32, (3, 3), activation='relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(Dropout(0.25))
